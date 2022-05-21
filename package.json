@@ -4,7 +4,8 @@
   "description": "",
   "main": "config.js",
   "scripts": {
-    "start": "echo 'use docker for local server'"
+    "start": "echo 'use docker for local server'",
+    "clean": "scripts/clean.sh"
   },
   "dependencies": {
     "raneto": "0.16.2",
