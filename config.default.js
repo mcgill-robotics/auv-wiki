@@ -68,7 +68,7 @@ var config = {
   analytics: '',
 
   // Set to true to enable the web editor
-  allow_editing : false,
+  allow_editing : true,
 
   // Set to true to enable HTTP Basic Authentication
   authentication : false,
@@ -111,7 +111,7 @@ var config = {
   searchExtraLanguages: ['ru'],
 
   // Sets the format for datetime's
-  datetime_format: 'Do MMM YYYY',
+  datetime_format: 'DD MMM YYYY',
 
   // Set to true to render suitable layout for RTL languages
   rtl_layout: false,

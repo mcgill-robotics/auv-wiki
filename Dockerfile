@@ -14,7 +14,6 @@ RUN cd /tmp \
 
 WORKDIR $RANETO_INSTALL_DIR
 RUN rm -rf example/content
-COPY content example/content 
 COPY config.default.js  example/config.default.js 
 RUN npm install
 
