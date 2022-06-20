@@ -48,7 +48,7 @@ var config = {
   show_on_home_default: true,
 
   // Which Theme to Use?
-  theme_dir  : path.join(__dirname, '..', 'themes'),
+  theme_dir  : path.join(__dirname, 'themes'),
   theme_name : 'default',
 
   // Specify the path of your content folder where all your '.md' files are located
@@ -57,7 +57,7 @@ var config = {
   content_dir : path.join(__dirname, 'content'),
 
   // Where is the public directory or document root?
-  public_dir  : path.join(__dirname, '..', 'themes', 'default', 'public'),
+  public_dir  : path.join(__dirname, 'themes', 'default', 'public'),
 
   // The base URL of your images folder,
   // Relative to config.public_dir
@@ -147,7 +147,7 @@ var config = {
   menu_on_page_collapsible: true
 };
 
-config.public_dir = path.join(__dirname, '..', 'themes', config.theme_name, 'public');
+config.public_dir = path.join(__dirname, 'themes', config.theme_name, 'public');
 
 // Exports
 module.exports = config;

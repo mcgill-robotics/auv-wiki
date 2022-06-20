@@ -4,7 +4,7 @@
   "description": "",
   "main": "config.js",
   "scripts": {
-    "start": "echo 'use docker for local server'",
+    "start": "node server.js",
     "clean": "scripts/clean.sh"
   },
   "dependencies": {
