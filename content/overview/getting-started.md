@@ -1,7 +1,5 @@
 ---
 ---
-# Introduction
+# Synopsis
 
-This is intended to be the central, comprehensive wiki for all things AUV.
-
-edited
+This page is meant to server as the first point of contact for new members.
