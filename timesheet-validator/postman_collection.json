@@ -1,0 +1,112 @@
+{
+  "info": {
+    "name": "Timesheet Overlap Validator",
+    "description": "Local FastAPI validator tests plus the direct S/4HANA timesheet POST. Set the collection variables before running.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",   "value": "http://localhost:8000" },
+    { "key": "s4BaseUrl", "value": "https://my423259-api.s4hana.cloud.sap" },
+    { "key": "s4User",    "value": "POSTMAN_USER" },
+    { "key": "s4Pass",    "value": "your_password" }
+  ],
+  "item": [
+    {
+      "name": "1 - Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "2 - Validate No Overlap",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"employeeId\": \"P000020\",\n  \"date\": \"2026-06-17\",\n  \"startTime\": \"PT10H00M00S\",\n  \"endTime\": \"PT12H00M00S\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/validate-overlap",
+          "host": ["{{baseUrl}}"],
+          "path": ["validate-overlap"]
+        }
+      }
+    },
+    {
+      "name": "3 - Validate With Overlap",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"employeeId\": \"P000020\",\n  \"date\": \"2026-06-17\",\n  \"startTime\": \"PT08H00M00S\",\n  \"endTime\": \"PT10H00M00S\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/validate-overlap",
+          "host": ["{{baseUrl}}"],
+          "path": ["validate-overlap"]
+        }
+      }
+    },
+    {
+      "name": "4 - POST Timesheet to S/4HANA",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.sendRequest({",
+              "    url: pm.variables.get('s4BaseUrl') + '/sap/opu/odata/sap/API_MANAGE_WORKFORCE_TIMESHEET/',",
+              "    method: 'GET',",
+              "    header: {",
+              "        'x-csrf-token': 'fetch',",
+              "        'Authorization': 'Basic ' + btoa(pm.variables.get('s4User') + ':' + pm.variables.get('s4Pass'))",
+              "    }",
+              "}, function (err, res) {",
+              "    pm.request.headers.upsert({",
+              "        key: 'x-csrf-token',",
+              "        value: res.headers.get('x-csrf-token')",
+              "    });",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "basic",
+          "basic": [
+            { "key": "username", "value": "{{s4User}}" },
+            { "key": "password", "value": "{{s4Pass}}" }
+          ]
+        },
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Accept", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"TimeSheetOperation\": \"C\",\n  \"PersonWorkAgreementExternalID\": \"P000020\",\n  \"CompanyCode\": \"1090\",\n  \"TimeSheetDate\": \"2026-06-17T00:00:00\",\n  \"TimeSheetIsReleasedOnSave\": false,\n  \"TimeSheetIsExecutedInTestRun\": false,\n  \"TimeSheetDataFields\": {\n    \"ControllingArea\": \"A000\",\n    \"SenderCostCenter\": \"5101090\",\n    \"ReceiverCostCenter\": \"\",\n    \"InternalOrder\": \"\",\n    \"ActivityType\": \"T005\",\n    \"WBSElement\": \"S.POCTST2.01.1.03\",\n    \"WorkItem\": \"\",\n    \"BillingControlCategory\": \"\",\n    \"PurchaseOrder\": \"\",\n    \"PurchaseOrderItem\": \"0\",\n    \"TimeSheetTaskType\": \"\",\n    \"TimeSheetTaskLevel\": \"\",\n    \"TimeSheetTaskComponent\": \"\",\n    \"TimeSheetNote\": \"\",\n    \"RecordedHours\": \"2.00\",\n    \"RecordedQuantity\": \"2.000\",\n    \"HoursUnitOfMeasure\": \"H\",\n    \"RejectionReason\": \"\",\n    \"TimeSheetWrkLocCode\": \"\",\n    \"TimeSheetOvertimeCategory\": \"\",\n    \"SenderPubSecFund\": \"\",\n    \"SendingPubSecFunctionalArea\": \"YB10\",\n    \"SenderPubSecGrant\": \"\",\n    \"SenderPubSecBudgetPeriod\": \"\",\n    \"ReceiverPubSecFund\": \"\",\n    \"ReceiverPubSecFuncnlArea\": \"YB99\",\n    \"ReceiverPubSecGrant\": \"\",\n    \"ReceiverPubSecBudgetPeriod\": \"\"\n  },\n  \"YY1_StartTime_TIM\": \"PT10H00M00S\",\n  \"YY1_EndTime_TIM\": \"PT12H00M00S\",\n  \"YY1_TEST1_TIM\": \"\"\n}"
+        },
+        "url": {
+          "raw": "{{s4BaseUrl}}/sap/opu/odata/sap/API_MANAGE_WORKFORCE_TIMESHEET/TimeSheetEntryCollection",
+          "host": ["{{s4BaseUrl}}"],
+          "path": ["sap", "opu", "odata", "sap", "API_MANAGE_WORKFORCE_TIMESHEET", "TimeSheetEntryCollection"]
+        }
+      }
+    }
+  ]
+}
