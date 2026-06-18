@@ -1,18 +1,16 @@
-import httpx
-import json
 import os
+import re
+import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from anthropic import Anthropic
 
 # Load values from .env file
 load_dotenv()
 
-S4_BASE_URL   = os.getenv("S4_BASE_URL")
-S4_USER       = os.getenv("S4_USER")
-S4_PASS       = os.getenv("S4_PASS")
-ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY")
+S4_BASE_URL = os.getenv("S4_BASE_URL")
+S4_USER     = os.getenv("S4_USER")
+S4_PASS     = os.getenv("S4_PASS")
 
 app = FastAPI(title="Timesheet Overlap Validator")
 
@@ -29,8 +27,7 @@ class ValidateRequest(BaseModel):
 @app.post("/validate-overlap")
 async def validate_overlap(req: ValidateRequest):
     existing = await fetch_s4_records(req.employeeId, req.date)
-    result   = await ask_claude(existing, req.startTime, req.endTime)
-    return result
+    return detect_overlaps(existing, req.startTime, req.endTime)
 
 
 # ── Health check ─────────────────────────────────────────────────
@@ -57,10 +54,21 @@ async def fetch_s4_records(employee_id: str, date: str) -> list:
         "$format": "json"
     }
     async with httpx.AsyncClient() as client:
-        response = await client.get(
-            url, params=params, auth=(S4_USER, S4_PASS)
-        )
-        response.raise_for_status()
+        try:
+            response = await client.get(
+                url, params=params, auth=(S4_USER, S4_PASS)
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise HTTPException(
+                status_code=exc.response.status_code,
+                detail=f"S/4HANA request failed: {exc.response.text}"
+            )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Could not reach S/4HANA: {exc}"
+            )
 
     records = response.json()["d"]["results"]
     return [
@@ -74,44 +82,95 @@ async def fetch_s4_records(employee_id: str, date: str) -> list:
     ]
 
 
-# ── Ask Claude to detect overlaps ────────────────────────────────
-async def ask_claude(
+# ── Time helpers ─────────────────────────────────────────────────
+_DURATION_RE = re.compile(
+    r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$", re.IGNORECASE
+)
+
+
+def parse_odata_time(value: str) -> int:
+    """Convert an OData V2 duration like 'PT08H30M00S' to minutes past midnight."""
+    match = _DURATION_RE.match(value.strip())
+    if not match:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid OData time format: '{value}'. Expected e.g. PT08H00M00S."
+        )
+    hours, minutes, _seconds = (int(g) if g else 0 for g in match.groups())
+    return hours * 60 + minutes
+
+
+def format_hhmm(minutes: int) -> str:
+    """Render minutes-past-midnight as 'HH:MM'."""
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+# ── Detect overlaps (deterministic) ──────────────────────────────
+def detect_overlaps(
     existing_records: list,
     proposed_start:   str,
     proposed_end:     str
 ) -> dict:
+    """Compare the proposed entry against existing approved records.
 
-    client = Anthropic(api_key=ANTHROPIC_KEY)
+    Two intervals overlap when one starts strictly before the other ends:
+    existingStart < proposedEnd AND proposedStart < existingEnd.
+    """
+    p_start = parse_odata_time(proposed_start)
+    p_end   = parse_odata_time(proposed_end)
 
-    prompt = f"""You are a timesheet overlap detector.
-Times are in OData V2 format: PT08H00M00S means 8:00 AM.
+    if p_end <= p_start:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"endTime ({format_hhmm(p_end)}) must be after "
+                f"startTime ({format_hhmm(p_start)})."
+            )
+        )
 
-Existing entries for this employee today:
-{json.dumps(existing_records, indent=2)}
+    conflicts = []
+    for record in existing_records:
+        e_start = parse_odata_time(record["startTime"])
+        e_end   = parse_odata_time(record["endTime"])
 
-Proposed new entry:
-Start: {proposed_start}
-End:   {proposed_end}
+        # Overlap test
+        if e_start < p_end and p_start < e_end:
+            overlap_start = max(p_start, e_start)
+            overlap_end   = min(p_end, e_end)
+            conflicts.append({
+                "TimeSheetRecord": record["TimeSheetRecord"],
+                "existingStart":   format_hhmm(e_start),
+                "existingEnd":     format_hhmm(e_end),
+                "overlapPeriod":   (
+                    f"{format_hhmm(overlap_start)} to {format_hhmm(overlap_end)}"
+                ),
+                "overlapMinutes":  overlap_end - overlap_start,
+            })
 
-Two intervals overlap if one starts before the other ends.
-Respond ONLY in valid JSON — no markdown, no extra text:
-{{
-  \"hasOverlap\": true or false,
-  \"conflicts\": [
-    {{
-      \"TimeSheetRecord\": \"record number\",
-      \"existingStart\": \"HH:MM\",
-      \"existingEnd\": \"HH:MM\",
-      \"overlapPeriod\": \"HH:MM to HH:MM\"
-    }}
-  ],
-  \"message\": \"plain English explanation\"
-}}"""
+    proposed_window = f"{format_hhmm(p_start)}-{format_hhmm(p_end)}"
 
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}]
+    if not conflicts:
+        return {
+            "hasOverlap": False,
+            "conflicts":  [],
+            "message":    "No conflicts found. Safe to post.",
+        }
+
+    # Build a clear, human-readable explanation listing every conflict.
+    details = "; ".join(
+        f"record {c['TimeSheetRecord']} ({c['existingStart']}-{c['existingEnd']}, "
+        f"overlapping {c['overlapPeriod']})"
+        for c in conflicts
+    )
+    count = len(conflicts)
+    noun  = "approved entry" if count == 1 else "approved entries"
+    message = (
+        f"Proposed time {proposed_window} overlaps {count} {noun}: {details}. "
+        f"Adjust the start/end time to avoid these periods before posting."
     )
 
-    return json.loads(response.content[0].text)
+    return {
+        "hasOverlap": True,
+        "conflicts":  conflicts,
+        "message":    message,
+    }
